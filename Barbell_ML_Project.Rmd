@@ -1,0 +1,144 @@
+---
+title: 'Barbell Lifts: Did I Do It Right?'
+author: "Shelley Stall"
+date: "Saturday, May 23, 2015"
+output: html_document
+---
+
+##Project Goal
+Determine if the subject performaing a "barbell lift" used the correct form (Classe "A"). If they didn't, which of the four (4) form errors did they make (Classe "B" through "E").
+
+##Background
+We commonly use personal activity monitors to track our level of activity to help us reach health and fitness goals.  It's more of a challenge to determine if a particular activity is being done correctly.  In this project, we use data from accelerometers on the belt, forearm, arm, and dumbbell (or barbell) of 6 participants. They were asked to perform barbell lifts correctly and incorrectly totally 5 different ways.
+
+Prediction Classes  | Description
+--------------------|--------------------------------------------------
+Class A             | Barbell lift exactly according to specfications
+Class B             | Throwing the Elbows to the front
+Class C             | Lifting the dumbbell only halfway
+Class D             | Lowering the dumbbell only halfway
+Class E             | Throwing the hips to the front
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+##How the Model was Built
+The data was downloaded and exploration was done to determine if any tidying was needed.  There were missing values and division by zero error codes that needed to be managed. 
+For the model, random forest using the caret package was selected.  Random forest is very accurate, but with the caret packet could be very slow. 
+
+The classe data is converted to a factor element. Columns with complete data are determined and kept.  Columns that won't contribute to the prediction such as row numbers, subject name, time stamps, and time window ids are removed.
+
+The testing data set was randomly divided into a two portion in order to support cross-validation by using a portion for training and the rest to determine the likely prediction accuracy. 
+
+```{r, echo=TRUE}
+require(ggplot2)
+require(caret)
+set.seed(31456)
+mysandbox <- read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!"), stringsAsFactors = FALSE)
+## Convert classe to a factor
+mysandbox$classe <- as.factor(mysandbox$classe)
+## Identify columns with all missing data
+mysandbox_NA <- mysandbox[,colSums(is.na(mysandbox)) == 0]
+## Select the colunms that will support prediction
+tidy_sandbox <- mysandbox_NA[,8:60]
+## Prepare a training (60%) and testing (40%) set.
+inTrain <- createDataPartition(y=tidy_sandbox$classe, p=0.6, list=FALSE)
+training <- tidy_sandbox[inTrain,]
+testing <- tidy_sandbox[-inTrain,]
+```
+
+###Data
+The training and testing dataset for the project is a subset of the Weight LIfting Exercise Dataset noted above. 
+
+To give you a sense for how two important data elements work together in the data, plotted below is pitch_forearm and roll_forarm from the training dataset, colored by the class.  Remember, class A is being done in correct form. 
+
+```{r, echo=FALSE}
+qplot(pitch_forearm, roll_forearm, color=classe, data=training)
+```
+
+
+###The Model
+```{r, eval=FALSE, echo=TRUE}
+rfmodFit <- train(classe ~.,data=training,method="rf",prox=TRUE)
+```
+
+```{r, echo=FALSE}
+rfmodFit <- readRDS("myModel_rf_1.rds")
+```
+
+###Cross Validation
+When preparing the training and testing set of the provided data, a **random sampling** of training data (60%) was selected from the provided training data for the class.  By randomly dividing the data into to sets we can perform cross validation and determine the probable accuracy of our model before using the actual testing data.  
+
+```{r}
+rfmodFit
+```
+
+The list of variables in order of importance:
+```{r}
+varImp(rfmodFit)
+```
+
+###Expected Out of Sample Error
+
+Using our set aside testing model we predict the model performance.
+
+```{r}
+rfmodFit.predict = predict(rfmodFit,testing)
+predMatrix = with(testing,table(rfmodFit.predict,classe))
+sum(diag(predMatrix))/sum(as.vector(predMatrix))
+```
+
+The accuracy is 99.15%
+This means that the expected out of sample error is .85%
+The full confusion matrix is below
+```{r}
+print(confusionMatrix(rfmodFit.predict, testing$classe), digits=4)
+```
+
+##Comparision Model using RandomForest package 
+
+Using the randomforest function we define the number of trees limiting it to 100.
+```{r,  echo=TRUE}
+require(randomForest)
+randomforest_modFit=randomForest(classe ~.,data=training,ntree=100,importance=TRUE)
+randomforest_modFit
+```
+
+Plot of the important variable:
+```{r,fig.height=9}
+varImpPlot(randomforest_modFit,)
+```
+
+###Expected Out of Sample Error
+Using our randomly selected testing dataset we predict the model performance.
+
+```{r}
+ranfor_modFit.predict = predict(randomforest_modFit,testing)
+pred002Matrix = with(testing,table(ranfor_modFit.predict,classe))
+sum(diag(pred002Matrix))/sum(as.vector(pred002Matrix))
+```
+
+The accuracy is 99.34%
+This means that the expected out of sample error is .66%
+The full confusion matrix is below:
+```{r}
+print(confusionMatrix(ranfor_modFit.predict, testing$classe), digits=4)
+```
+
+##Prepare the test submission
+Read in the test data in the same manner as the training data:
+```{r}
+the_test_data <- read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!"), stringsAsFactors = FALSE)
+```
+
+Results for the first model:
+```{r}
+the_test_data1.predict = predict(rfmodFit,the_test_data)
+the_test_data1.predict
+```
+
+Results for the second model:
+```{r}
+the_test_data2.predict = predict(randomforest_modFit,the_test_data)
+the_test_data2.predict
+```
+Identical results. Good.
